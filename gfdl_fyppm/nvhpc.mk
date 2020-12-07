@@ -33,12 +33,8 @@ CFLAGS := $(INCLUDES) -tp haswell
 CFLAGS_DEBUG = -O0 -g -traceback -Ktrap=fp
 
 # start with blank LIBS
-LPATH := $(shell nf-config --flibs)
-#LIBS := -lnetcdff -lnetcdf -lhdf5_hl -lhdf5 -lz
-LIBS := -lnetcdff -lnetcdf 
-#LIBS := -L/opt/netcdf/4.6.1/PGI/lib64 -lnetcdff -lnetcdf -L/opt/hdf5/1.10.1/PGI/lib -lhdf5_hl -lhdf5 -lz
-#-L/opt/pgi/17.10/linux86-64/17.10/lib -laccapi -laccg
-LDFLAGS := $(shell nc-config --libs) $(shell nc-config --flibs) -L$(HDF5_ROOT)/lib
+LIBS :=
+LDFLAGS := $(shell nc-config --flibs)
 
 ifneq ($(DEBUG),)
 CFLAGS += $(CFLAGS_DEBUG)
