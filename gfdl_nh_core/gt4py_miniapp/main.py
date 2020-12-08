@@ -96,18 +96,27 @@ def do_test(data_file, backend):
     #    print(var, type(data[var]))
     # saved as a singleton but should be 3d, probably due to unspecified dimension endpoints:
     start_time = timeit.timeit()
+    gama = 1.0 / (1.0 - data["akap"])
     riem( data["hs"],
           data["w3"],
           data["pt"],
           data["delp"],
           data["gz"],
           data["pef"],
-          data["ws"], pe,  data["q_con"],data["cappa"], 
+          data["ws"],
+          data["q_con"],
+          data["cappa"],
+          pe,
           data["p_fac"],
-          data["scale_m"], data["ms"],
+          data["scale_m"],
+          data["ms"],
           data["dt"],
-          data["akap"],data["cp"],
-          data["ptop"]
+          data["akap"],
+          data["cp"],
+          data["ptop"],
+          gama,
+          origin=(data.ng - 1, data.ng - 1, 0),
+          domain=(data.npx + 1, data.npx + 1, data.km) 
           )
     end_time = timeit.timeit()
     print("Sum of gz_out = ", np.sum(data["gz_out"]))
@@ -118,7 +127,13 @@ def do_test(data_file, backend):
     pef_slice = (slice(data.ng - 1, data.ng + data.npx - 1), slice(data.ng - 1, data.ng + data.npy - 1), slice(0, data.km))
     print("max relative diff of pef", np.max((np.abs(pe[pef_slice] - data["pef"][pef_slice])) / pe[pef_slice]))
     print('elapsed time (sec) = ', end_time - start_time)
-
+    for i in range(data["gz"].shape[0]):
+        for j in range(data["gz"].shape[1]):
+            for k in range(3):
+                comp = data["gz"][i, j, k]
+                ref = data["gz_out"][i, j, k]
+                if comp != ref:
+                    print(i, j, k, comp, ref, comp - ref)
 if __name__ == "__main__":
     if len(sys.argv) not in [2, 3]:
         raise ValueError("Usage: main.py path/to/dataset.nc [backend]")

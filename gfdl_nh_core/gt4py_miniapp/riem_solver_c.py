@@ -1,8 +1,8 @@
 from gt4py.gtscript import (__INLINED, BACKWARD, FORWARD, IJ, IJK, PARALLEL,
                             Field, I, J, K, computation, exp, interval, log)
 
-MOIST_CAPPA: bool = True
-USE_COND: bool = True
+MOIST_CAPPA: bool = False
+USE_COND: bool = False
 GRAV: float = 9.8
 RDGAS: float = 287.04
 
@@ -30,8 +30,9 @@ def riem_solver_c(
         delp: Field[float, IJK],
         gz: Field[float, IJK],
         pef: Field[float, IJK],
-        ws: Field[float, IJK], pe: Field[float, IJK], q_con: Field[float, IJK], cappa: Field[float, IJK],
-        p_fac: float, scale_m: float, ms: int, dt: float, akap: float, cp: float, ptop: float):
+        ws: Field[float, IJK], q_con: Field[float, IJK], cappa: Field[float, IJK], pe: Field[float, IJK],
+        p_fac: float, scale_m: float, ms: int, dt: float, akap: float, cp: float, ptop: float, gama: float):
+
     """
     C-grid Riemann solver.
 
@@ -55,9 +56,8 @@ def riem_solver_c(
     """
     from __externals__ import A_IMP
 
-    with computation(PARALLEL), interval(...):
+    with computation(PARALLEL), interval(0, -1):
         dm = delp
-        gama = 1. / (1. - akap)
     with computation(FORWARD):
         with interval(0, 1):
             pef = ptop
@@ -65,7 +65,7 @@ def riem_solver_c(
             if __INLINED(USE_COND):
                 peg = ptop
 
-        with interval(2, None):
+        with interval(1, None):
             pem = pem[0, 0, -1] + dm[0, 0, -1]
             if __INLINED(USE_COND):
                 peg = peg[0, 0, -1] + dm[0, 0, -1] * (1. - q_con[0, 0, -1])
@@ -97,14 +97,11 @@ def riem_solver_c(
             w1 = w2
 
     # Line 245
-    with computation(PARALLEL), interval(1, -2):
+    with computation(PARALLEL), interval(0, -2):
         if __INLINED(A_IMP > 0.5):
-            g_rat = dm[0, 0, 0] / dm[0, 0, 1]
+            g_rat = dm / dm[0, 0, 1]
             bb = 2. * (1. + g_rat)
             dd = 3. * (pe + g_rat) * pe[0, 0, 1]
-        # with interval(-2, -1):
-        #     bb = 2.0
-        #     dd = 3.0 * pe
 
     # Line 255
     with computation(FORWARD):
@@ -112,27 +109,26 @@ def riem_solver_c(
         with interval(0, 1):
             if __INLINED(A_IMP > 0.5):
                 pp = 0
+                bet = bb
         with interval(1, 2):
             if __INLINED(A_IMP > 0.5):
-                pp = dd[0, 0, -1] / bb[0, 0, -1]
+                bet = bet[0, 0, -1]
+                pp = dd[0, 0, -1] / bet
         with interval(-2, -1):
             if __INLINED(A_IMP > 0.5):
+                bet = bet[0, 0, -1]
                 bb = 2.
                 dd = 3 * pe
 
-    with computation(FORWARD), interval(2, 3):
-        if __INLINED(A_IMP > 0.5):
-            bet = bb[0, 0, -1]
-
     # Line 265
-    with computation(PARALLEL), interval(2, -1):
+    with computation(PARALLEL), interval(1, -1):
         if __INLINED(A_IMP > 0.5):
-            gam = g_rat[0, 0, -1] / bet[0, 0, 0]
+            gam = g_rat[0, 0, -1] / bet[0, 0, -1]
             bet = bb - gam
 
-    with computation(PARALLEL), interval(3, None):
+    with computation(PARALLEL), interval(2, None):
         if __INLINED(A_IMP > 0.5):
-            pp = (dd[0, 0, 0] - pp[0, 0, 0]) / bet[0, 0, -1]
+            pp = (dd[0, 0, -1] - pp[0, 0, -1]) / bet[0, 0, -1]
 
     # Line 275
     with computation(BACKWARD), interval(1, -1):  # this may need to be -2
@@ -204,8 +200,11 @@ def riem_solver_c(
     # } SIM1_solver
 
     # Line 177
-    with computation(PARALLEL), interval(2, None):
+    with computation(PARALLEL), interval(1, None):
         pef = pe + pem
 
-    with computation(BACKWARD), interval(1, -2):
-        gz = gz[0, 0, 1] - dz2 * GRAV
+    with computation(BACKWARD):
+        with interval(-1, None):
+            gz = hs
+        with interval(1, -2):
+            gz = gz[0, 0, 1] - dz2 * GRAV
