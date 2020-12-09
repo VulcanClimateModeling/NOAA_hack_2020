@@ -5,11 +5,11 @@ import gt4py
 import gt4py.storage as gt_storage
 import netCDF4 as nc
 import numpy as np
-import timeit
+import time
 from gt4py.gtscript import I, J, K, IJ, IJK, Field, stencil
 
 from riem_solver_c import riem_solver_c
-
+num_iter = 1
 def iterable(obj):
     return isinstance(obj, Iterable)
 
@@ -53,12 +53,14 @@ class Dataset:
             else:
                 origin = (0,)
             #print('FIELD', var.name, ndarray.shape)
+            #if var.name == "pef":
+            #    ndarray[:] = 1.0e8
             return gt_storage.from_array(
                 ndarray, backend, default_origin=origin, shape=ndarray.shape)
         else:
             if var.name in ["q_con", "cappa"]:
                 newarr = np.zeros((self.full_domain_nx, self.full_domain_ny, self.km))
-                newarr[:] = var[0].item()
+                #newarr[:] = var[0].item()
                 return gt_storage.from_array(newarr, backend, default_origin=(self.ng, self.ng, 0), shape=newarr.shape)
             else:
                 return var[0].item()
@@ -91,44 +93,59 @@ def do_test(data_file, backend):
 
     # other fields
     pe = data.new(IJK, float, pad_k=True)
-    riem = stencil(backend=backend, definition=riem_solver_c, externals={"A_IMP": data["a_imp"]})
+    pef = data.new(IJK, float, pad_k=True)
+    pem = data.new(IJK, float, pad_k=True)
+    dm = data.new(IJK, float, pad_k=True)
+    pef.data[:] = 1e8
+    gz_old = np.zeros(pe.shape)
+    gz_old = np.copy(data["gz"].data)
+    print('gz start', data["gz"][:,2,0])
+    print('gz ref', data["gz_out"][:,2,0])
+    gz_old = gt_storage.from_array(gz_old, backend, default_origin=(data.ng, data.ng, 0), shape=gz_old.shape)
+    riem = stencil(backend=backend, rebuild=False, definition=riem_solver_c, externals={"A_IMP": data["a_imp"]})
     #for var in ["hs", "w3", "pt", "q_con", "delp", "gz", "pef", "ws", "p_fac", "scale_m", "ms", "dt", "akap", "cp", "ptop", "cappa"]:
     #    print(var, type(data[var]))
     # saved as a singleton but should be 3d, probably due to unspecified dimension endpoints:
-    start_time = timeit.timeit()
+    start_time = time.time()
     gama = 1.0 / (1.0 - data["akap"])
-    riem( data["hs"],
-          data["w3"],
-          data["pt"],
-          data["delp"],
-          data["gz"],
-          data["pef"],
-          data["ws"],
-          data["q_con"],
-          data["cappa"],
-          pe,
-          data["p_fac"],
-          data["scale_m"],
-          data["ms"],
-          data["dt"],
-          data["akap"],
-          data["cp"],
-          data["ptop"],
-          gama,
-          origin=(data.ng - 1, data.ng - 1, 0),
-          domain=(data.npx + 1, data.npx + 1, data.km) 
-          )
-    end_time = timeit.timeit()
+    print('gz start', data["gz"][3, 3, 0:5], data["gz"][3, 3, 1:6], "dz2", data["gz"][3, 3, 1:6] - data["gz"][3, 3, 0:5])
+    print('ws', data["ws"][3, 3, 0:7])
+    for iter in range(num_iter):
+        riem( pem, dm, data["hs"],
+              data["w3"],
+              data["pt"],
+              data["delp"],
+              data["gz"],
+              gz_old, 
+              pef,
+              data["ws"],
+              data["q_con"],
+              data["cappa"],
+              pe,
+              data["p_fac"],
+              data["scale_m"],
+              data["ms"],
+              data["dt"],
+              data["akap"],
+              data["cp"],
+              data["ptop"],
+              gama,
+              origin=(data.ng - 1, data.ng - 1, 0),
+              domain=(data.npx + 1, data.npx + 1, data.km) 
+        )
+    end_time = time.time()
     print("Sum of gz_out = ", np.sum(data["gz_out"]))
     print("Sum of gz     = ", np.sum(data["gz"]))
     print("Sum of pef_out = ", np.sum(data["pef"]))
-    print("Sum of pef = ", np.sum(pe))
+    print("Sum of pef = ", np.sum(pef))
+    vslice = (slice(3,4), slice(3,4), slice(0,5))
+    print(pef[vslice], pe[vslice], "pp",pem[vslice], "w2",dm[vslice] )
     print("max diff of gz", np.max(np.abs(data["gz"] - data["gz_out"])))
     pef_slice = (slice(data.ng - 1, data.ng + data.npx - 1), slice(data.ng - 1, data.ng + data.npy - 1), slice(0, data.km))
-    print("max relative diff of pef", np.max((np.abs(pe[pef_slice] - data["pef"][pef_slice])) / pe[pef_slice]))
+    print("max relative diff of pef", np.max((np.abs(pef[pef_slice] - data["pef"][pef_slice])) / pef[pef_slice]))
     print('elapsed time (sec) = ', end_time - start_time)
-    for i in range(data["gz"].shape[0]):
-        for j in range(data["gz"].shape[1]):
+    for i in range(5): #data["gz"].shape[0]):
+        for j in range(5): #data["gz"].shape[1]):
             for k in range(3):
                 comp = data["gz"][i, j, k]
                 ref = data["gz_out"][i, j, k]
